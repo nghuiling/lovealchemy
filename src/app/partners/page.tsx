@@ -541,9 +541,14 @@ export default function PartnersPage() {
           </>
         )}
 
-        <Link href="/preview" className="pixel-button inline-block bg-[#ffcb47] px-4 py-3 text-base text-[#120a23]">
-          Back to Avatar Preview
-        </Link>
+        <div className="flex flex-wrap gap-3">
+          <Link href="/preview" className="pixel-button inline-block bg-[#ffcb47] px-4 py-3 text-base text-[#120a23]">
+            Back to Avatar Preview
+          </Link>
+          <Link href="/" className="pixel-button inline-block bg-[#7f8da6] px-4 py-3 text-base text-[#120a23]">
+            Exit to Home
+          </Link>
+        </div>
       </div>
     </main>
   );

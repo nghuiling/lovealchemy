@@ -77,9 +77,9 @@ export default function PreviewPage() {
   if (!session?.personality || !session.avatar || !session.playerSetup) return null;
 
   return (
-    <main className="pixel-grid-bg min-h-screen bg-background px-4 py-6 text-foreground sm:px-8">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <header className="pixel-card rounded-sm p-5">
+    <main className="pixel-grid-bg h-[100svh] overflow-hidden bg-background px-4 py-4 text-foreground sm:px-8">
+      <div className="mx-auto flex h-full max-w-5xl flex-col gap-4 overflow-hidden">
+        <header className="pixel-card shrink-0 rounded-sm p-4 sm:p-5">
           <p className="font-mono text-[10px] uppercase tracking-wide text-[#ffdf84]">
             Step 4 of 5
           </p>
@@ -90,9 +90,9 @@ export default function PreviewPage() {
           </p>
         </header>
 
-        <section className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
-          <div className="pixel-card rounded-sm p-5">
-            <div className="flex flex-col items-center gap-3">
+        <section className="grid min-h-0 flex-1 gap-4 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+          <div className="pixel-card flex min-h-0 flex-col overflow-hidden rounded-sm p-4 sm:p-5">
+            <div className="theme-scrollbar flex min-h-0 flex-1 flex-col items-center gap-3 overflow-y-auto pr-1">
               <PixelAvatar avatar={session.avatar} size={220} />
               <p className="text-2xl text-[#ffdf84]">{avatarName}</p>
               <p className="text-xl text-[#c8b7f8]">
@@ -106,13 +106,13 @@ export default function PreviewPage() {
             <button
               type="button"
               onClick={() => router.push("/partners")}
-              className="pixel-button mt-5 w-full bg-[#ffcb47] px-4 py-3 text-base text-[#120a23]"
+              className="pixel-button mt-4 w-full shrink-0 bg-[#ffcb47] px-4 py-3 text-base text-[#120a23]"
             >
               Release your avatar!
             </button>
           </div>
 
-          <div className="pixel-card rounded-sm p-5">
+          <div className="pixel-card flex min-h-0 flex-col overflow-hidden rounded-sm p-4 sm:p-5">
             <p className="font-mono text-[10px] uppercase tracking-wide text-[#ffdf84]">
               Avatar Chat
             </p>
@@ -121,7 +121,7 @@ export default function PreviewPage() {
               You are talking to {avatarChatName}. Responses mimic your personality profile.
             </p>
 
-            <div className="mt-4 h-72 overflow-y-auto border-2 border-[#120a23] bg-[#241544] p-3">
+            <div className="theme-scrollbar mt-3 min-h-0 flex-1 overflow-y-auto border-2 border-[#120a23] bg-[#241544] p-3">
               <div className="space-y-3">
                 {messages.map((msg, idx) => (
                   <div
@@ -141,7 +141,7 @@ export default function PreviewPage() {
               </div>
             </div>
 
-            <div className="mt-3 flex gap-2">
+            <div className="mt-3 flex shrink-0 gap-2">
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -166,7 +166,7 @@ export default function PreviewPage() {
             {chatError && (
               <p className="mt-2 text-lg text-[#ff8f8f]">{chatError}</p>
             )}
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-2 flex shrink-0 flex-wrap gap-2">
               {[
                 "Give me a first date idea",
                 "What red flags should I avoid?",

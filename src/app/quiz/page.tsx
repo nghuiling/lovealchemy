@@ -141,12 +141,14 @@ export default function QuizPage() {
     const SpeechCtor = window.webkitSpeechRecognition;
     if (!SpeechCtor) return;
 
+    recognitionRef.current?.stop();
     const recognition = new SpeechCtor();
-    recognition.continuous = true;
+    recognition.continuous = false;
     recognition.interimResults = true;
     recognition.lang = "en-US";
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       const transcript = Array.from(event.results)
+        .slice(event.resultIndex)
         .map((result) => result[0]?.transcript ?? "")
         .join(" ")
         .trim();
@@ -160,6 +162,7 @@ export default function QuizPage() {
     recognitionRef.current = recognition;
 
     setError(null);
+    setInput("");
     setIsListening(true);
     recognition.start();
   };
@@ -212,6 +215,9 @@ export default function QuizPage() {
 
   const sendAnswer = async () => {
     if (!currentQuestion || reachedMaximum || isGettingQuestion) return;
+    if (isListening) {
+      stopListening();
+    }
     const trimmed = input.trim();
     if (trimmed.length < 2) {
       setError("Please enter a fuller answer before sending.");
@@ -272,16 +278,16 @@ export default function QuizPage() {
   };
 
   return (
-    <main className="pixel-grid-bg min-h-screen bg-background px-4 py-6 text-foreground sm:px-8">
-      <div className="mx-auto max-w-5xl space-y-6">
+    <main className="pixel-grid-bg h-[100svh] overflow-hidden bg-background px-4 py-3 text-foreground sm:px-8 sm:py-4">
+      <div className="mx-auto flex h-full max-w-5xl flex-col gap-3 overflow-hidden">
         <header className="pixel-card rounded-sm p-5">
           <p className="font-mono text-[10px] uppercase tracking-wide text-[#ffdf84]">Step 2 of 5</p>
           <h1 className="mt-3 text-xl sm:text-3xl">Personality Interview Chat</h1>
-          <p className="mt-3 text-2xl text-[#c8b7f8]">
+          <p className="mt-2 text-xl text-[#c8b7f8]">
             AI keeps learning your vibe through questions. Minimum 3 answers, maximum 10 answers.{" "}
             <span className="blink">_</span>
           </p>
-          <div className="mt-4">
+          <div className="mt-3">
             <div className="h-4 w-full border-2 border-[#120a23] bg-[#2f1a55]">
               <div className="h-full bg-[#ffcb47]" style={{ width: `${progress}%` }} />
             </div>
@@ -291,10 +297,10 @@ export default function QuizPage() {
           </div>
         </header>
 
-        <section className="pixel-card rounded-sm p-5">
+        <section className="pixel-card flex min-h-0 flex-1 flex-col overflow-hidden rounded-sm p-5">
           <div
             ref={chatScrollRef}
-            className="h-[28rem] overflow-y-auto rounded-sm border-2 border-[#120a23] bg-[#1f1238] p-3"
+            className="theme-scrollbar min-h-0 flex-1 overflow-y-auto rounded-sm border-2 border-[#120a23] bg-[#1f1238] p-3"
           >
             <div className="space-y-3">
               {chatMessages.map((message, index) => (
@@ -322,7 +328,7 @@ export default function QuizPage() {
           </div>
 
           {!reachedMaximum && (
-            <div className="mt-4 space-y-3">
+            <div className="mt-3 space-y-3">
               <div className="flex flex-wrap gap-3">
                 <input
                   value={input}
@@ -356,7 +362,7 @@ export default function QuizPage() {
             </div>
           )}
 
-          <div className="mt-4 flex flex-wrap gap-3">
+          <div className="mt-3 flex flex-wrap gap-3">
             {reachedMinimum && (
               <button
                 type="button"

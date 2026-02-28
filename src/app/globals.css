@@ -81,6 +81,29 @@ body {
   margin-right: 4px;
 }
 
+.theme-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #4a2a84 #1b0f33;
+}
+
+.theme-scrollbar::-webkit-scrollbar {
+  width: 12px;
+}
+
+.theme-scrollbar::-webkit-scrollbar-track {
+  background: #1b0f33;
+  border-left: 2px solid #120a23;
+}
+
+.theme-scrollbar::-webkit-scrollbar-thumb {
+  background: #4a2a84;
+  border: 2px solid #120a23;
+}
+
+.theme-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #5d37a6;
+}
+
 @keyframes blink {
   to {
     visibility: hidden;

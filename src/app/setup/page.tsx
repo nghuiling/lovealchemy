@@ -33,10 +33,30 @@ const COUNTRY_OPTIONS = [
   "Philippines",
 ];
 
-const GENDER_OPTIONS: Array<{ value: PlayerSetup["gender"]; label: string; vibe: string; seed: number }> = [
-  { value: "female", label: "Female", vibe: OPTION_AVATAR_VIBE, seed: OPTION_AVATAR_SEED },
-  { value: "male", label: "Male", vibe: OPTION_AVATAR_VIBE, seed: OPTION_AVATAR_SEED },
-  { value: "nonbinary", label: "Non-binary", vibe: OPTION_AVATAR_VIBE, seed: OPTION_AVATAR_SEED },
+const GENDER_OPTIONS: Array<{
+  value: PlayerSetup["gender"];
+  label: string;
+  vibe: string;
+  seed: number;
+}> = [
+  {
+    value: "female",
+    label: "Female",
+    vibe: OPTION_AVATAR_VIBE,
+    seed: OPTION_AVATAR_SEED,
+  },
+  {
+    value: "male",
+    label: "Male",
+    vibe: OPTION_AVATAR_VIBE,
+    seed: OPTION_AVATAR_SEED,
+  },
+  {
+    value: "nonbinary",
+    label: "Non-binary",
+    vibe: OPTION_AVATAR_VIBE,
+    seed: OPTION_AVATAR_SEED,
+  },
 ];
 
 type LookingForOption =
@@ -51,9 +71,41 @@ type LookingForOption =
 
 const LOOKING_FOR_OPTIONS: LookingForOption[] = [
   { value: "any", label: "Any", isPair: true },
-  { value: "female", label: "Female", isPair: false, vibe: OPTION_AVATAR_VIBE, seed: OPTION_AVATAR_SEED },
-  { value: "male", label: "Male", isPair: false, vibe: OPTION_AVATAR_VIBE, seed: OPTION_AVATAR_SEED },
+  {
+    value: "female",
+    label: "Female",
+    isPair: false,
+    vibe: OPTION_AVATAR_VIBE,
+    seed: OPTION_AVATAR_SEED,
+  },
+  {
+    value: "male",
+    label: "Male",
+    isPair: false,
+    vibe: OPTION_AVATAR_VIBE,
+    seed: OPTION_AVATAR_SEED,
+  },
 ];
+
+type BirthParts = {
+  year: string;
+  month: string;
+  day: string;
+};
+
+function parseBirthDate(value: string): BirthParts {
+  if (!value) return { year: "", month: "", day: "" };
+  const [year = "", month = "", day = ""] = value.split("-");
+  return { year, month, day };
+}
+
+function getDaysInMonth(year: string, month: string) {
+  if (!year || !month) return 31;
+  const y = Number(year);
+  const m = Number(month);
+  if (!Number.isFinite(y) || !Number.isFinite(m)) return 31;
+  return new Date(y, m, 0).getDate();
+}
 
 export default function PlayerSetupPage() {
   const router = useRouter();
@@ -62,7 +114,49 @@ export default function PlayerSetupPage() {
     if (!existing) return INITIAL_FORM;
     return { ...INITIAL_FORM, ...existing };
   });
+  const [birthParts, setBirthParts] = useState<BirthParts>(() =>
+    parseBirthDate(form.birthDate),
+  );
   const [formError, setFormError] = useState<string | null>(null);
+
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: currentYear - 1949 }, (_, index) =>
+    String(currentYear - index),
+  );
+  const monthOptions = [
+    { value: "01", label: "January" },
+    { value: "02", label: "February" },
+    { value: "03", label: "March" },
+    { value: "04", label: "April" },
+    { value: "05", label: "May" },
+    { value: "06", label: "June" },
+    { value: "07", label: "July" },
+    { value: "08", label: "August" },
+    { value: "09", label: "September" },
+    { value: "10", label: "October" },
+    { value: "11", label: "November" },
+    { value: "12", label: "December" },
+  ];
+  const maxDays = getDaysInMonth(birthParts.year, birthParts.month);
+  const dayOptions = Array.from({ length: maxDays }, (_, index) =>
+    String(index + 1).padStart(2, "0"),
+  );
+
+  const updateBirthParts = (next: BirthParts) => {
+    const clampedDay =
+      next.day && Number(next.day) > getDaysInMonth(next.year, next.month)
+        ? String(getDaysInMonth(next.year, next.month)).padStart(2, "0")
+        : next.day;
+    const normalized = { ...next, day: clampedDay };
+    setBirthParts(normalized);
+    setForm((prev) => ({
+      ...prev,
+      birthDate:
+        normalized.year && normalized.month && normalized.day
+          ? `${normalized.year}-${normalized.month}-${normalized.day}`
+          : "",
+    }));
+  };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -85,34 +179,94 @@ export default function PlayerSetupPage() {
     <main className="pixel-grid-bg min-h-screen bg-background px-4 py-6 text-foreground sm:px-8">
       <div className="mx-auto max-w-4xl space-y-6">
         <header className="pixel-card rounded-sm p-5">
-          <p className="font-mono text-[10px] uppercase tracking-wide text-[#ffdf84]">Step 1 of 5</p>
-          <h1 className="mt-3 text-xl sm:text-3xl">Player Setup</h1>
+          <p className="font-mono text-[10px] uppercase tracking-wide text-[#ffdf84]">
+            Step 1 of 5
+          </p>
+          <h1 className="mt-3 text-xl sm:text-3xl">Avatar Setup</h1>
           <p className="mt-3 text-2xl text-[#c8b7f8]">
-            Enter your birth details before starting the love quest profile. <span className="blink">_</span>
+            Enter your details. <span className="blink">_</span>
           </p>
         </header>
 
         <form onSubmit={handleSubmit} className="pixel-card rounded-sm p-5">
           <p className="text-lg text-[#ffdf84]">
-            Player: <span className="text-[#ffeeb9]">{form.name || "Not set"}</span>
+            Avatar:{" "}
+            <span className="text-[#ffeeb9]">{form.name || "Not set"}</span>
           </p>
           <div className="space-y-3 text-xl">
             <label className="block">
               Birth Date
-              <input
-                type="date"
-                required
-                value={form.birthDate}
-                onChange={(event) => setForm((prev) => ({ ...prev, birthDate: event.target.value }))}
-                className="mt-1 w-full border-2 border-[#120a23] bg-[#e9ddff] px-3 py-2 text-[#120a23] outline-none"
-              />
+              <div className="mt-1 grid grid-cols-3 gap-2">
+                <select
+                  required
+                  value={birthParts.day}
+                  onChange={(event) =>
+                    updateBirthParts({
+                      ...birthParts,
+                      day: event.target.value,
+                    })
+                  }
+                  className="w-full border-2 border-[#120a23] bg-[#e9ddff] px-2 py-2 text-[#120a23] outline-none"
+                >
+                  <option value="" disabled>
+                    Day
+                  </option>
+                  {dayOptions.map((day) => (
+                    <option key={day} value={day}>
+                      {day}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  required
+                  value={birthParts.month}
+                  onChange={(event) =>
+                    updateBirthParts({
+                      ...birthParts,
+                      month: event.target.value,
+                    })
+                  }
+                  className="w-full border-2 border-[#120a23] bg-[#e9ddff] px-2 py-2 text-[#120a23] outline-none"
+                >
+                  <option value="" disabled>
+                    Month
+                  </option>
+                  {monthOptions.map((month) => (
+                    <option key={month.value} value={month.value}>
+                      {month.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  required
+                  value={birthParts.year}
+                  onChange={(event) =>
+                    updateBirthParts({
+                      ...birthParts,
+                      year: event.target.value,
+                    })
+                  }
+                  className="w-full border-2 border-[#120a23] bg-[#e9ddff] px-2 py-2 text-[#120a23] outline-none"
+                >
+                  <option value="" disabled>
+                    Year
+                  </option>
+                  {yearOptions.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </label>
             <label className="block">
               Country
               <select
                 required
                 value={form.location}
-                onChange={(event) => setForm((prev) => ({ ...prev, location: event.target.value }))}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, location: event.target.value }))
+                }
                 className="mt-1 w-full border-2 border-[#120a23] bg-[#e9ddff] px-3 py-2 text-[#120a23] outline-none"
               >
                 {COUNTRY_OPTIONS.map((country) => (
@@ -129,7 +283,9 @@ export default function PlayerSetupPage() {
                   <button
                     type="button"
                     key={option.value}
-                    onClick={() => setForm((prev) => ({ ...prev, gender: option.value }))}
+                    onClick={() =>
+                      setForm((prev) => ({ ...prev, gender: option.value }))
+                    }
                     className={`pixel-card rounded-sm p-3 ${
                       form.gender === option.value
                         ? OPTION_SELECTED_CLASS
@@ -137,7 +293,14 @@ export default function PlayerSetupPage() {
                     }`}
                   >
                     <div className="mx-auto mb-2 w-fit">
-                      <PixelAvatar avatar={generateAvatar(option.vibe, option.seed, option.value)} size={64} />
+                      <PixelAvatar
+                        avatar={generateAvatar(
+                          option.vibe,
+                          option.seed,
+                          option.value,
+                        )}
+                        size={64}
+                      />
                     </div>
                     <p className="text-sm">{option.label}</p>
                   </button>
@@ -167,15 +330,36 @@ export default function PlayerSetupPage() {
                       {option.isPair ? (
                         <>
                           <div className="absolute left-0 top-2">
-                            <PixelAvatar avatar={generateAvatar(OPTION_AVATAR_VIBE, OPTION_AVATAR_SEED, "female")} size={58} />
+                            <PixelAvatar
+                              avatar={generateAvatar(
+                                OPTION_AVATAR_VIBE,
+                                OPTION_AVATAR_SEED,
+                                "female",
+                              )}
+                              size={58}
+                            />
                           </div>
                           <div className="absolute right-0 top-2">
-                            <PixelAvatar avatar={generateAvatar(OPTION_AVATAR_VIBE, OPTION_AVATAR_SEED, "male")} size={58} />
+                            <PixelAvatar
+                              avatar={generateAvatar(
+                                OPTION_AVATAR_VIBE,
+                                OPTION_AVATAR_SEED,
+                                "male",
+                              )}
+                              size={58}
+                            />
                           </div>
                         </>
                       ) : (
                         <div className="mx-auto w-fit">
-                          <PixelAvatar avatar={generateAvatar(option.vibe, option.seed, option.value)} size={58} />
+                          <PixelAvatar
+                            avatar={generateAvatar(
+                              option.vibe,
+                              option.seed,
+                              option.value,
+                            )}
+                            size={58}
+                          />
                         </div>
                       )}
                     </div>
@@ -222,10 +406,24 @@ export default function PlayerSetupPage() {
             </div>
           </div>
 
-          <button type="submit" className="pixel-button mt-4 w-full bg-[#ffcb47] px-4 py-3 text-base text-[#120a23]">
-            Continue to Love Profile Quiz
-          </button>
-          {formError && <p className="mt-3 text-lg text-[#ff8f8f]">{formError}</p>}
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => router.push("/")}
+              className="pixel-button w-full bg-[#7f8da6] px-4 py-3 text-base text-[#120a23]"
+            >
+              Back to Home
+            </button>
+            <button
+              type="submit"
+              className="pixel-button w-full bg-[#ffcb47] px-4 py-3 text-base text-[#120a23]"
+            >
+              Continue to Love Profiling
+            </button>
+          </div>
+          {formError && (
+            <p className="mt-3 text-lg text-[#ff8f8f]">{formError}</p>
+          )}
         </form>
       </div>
     </main>
