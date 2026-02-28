@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { PlayerSetup, writeSession } from "@/lib/session";
+import { PlayerSetup, readSession, writeSession } from "@/lib/session";
 
 const INITIAL_FORM: PlayerSetup = {
   name: "",
@@ -16,11 +16,19 @@ const INITIAL_FORM: PlayerSetup = {
 
 export default function PlayerSetupPage() {
   const router = useRouter();
-  const [form, setForm] = useState<PlayerSetup>(INITIAL_FORM);
+  const [form, setForm] = useState<PlayerSetup>(() => {
+    const existing = readSession()?.playerSetup;
+    if (!existing) return INITIAL_FORM;
+    return { ...INITIAL_FORM, ...existing };
+  });
   const [formError, setFormError] = useState<string | null>(null);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!form.name.trim()) {
+      setFormError("Please enter your name on the home page first.");
+      return;
+    }
     if (form.minPartnerAge > form.maxPartnerAge) {
       setFormError("Min partner age must be lower than max partner age.");
       return;
@@ -44,18 +52,10 @@ export default function PlayerSetupPage() {
         </header>
 
         <form onSubmit={handleSubmit} className="pixel-card rounded-sm p-5">
+          <p className="text-lg text-[#ffdf84]">
+            Player: <span className="text-[#ffeeb9]">{form.name || "Not set"}</span>
+          </p>
           <div className="space-y-3 text-xl">
-            <label className="block">
-              Your Name
-              <input
-                type="text"
-                required
-                placeholder="e.g. Alex"
-                value={form.name}
-                onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
-                className="mt-1 w-full border-2 border-[#120a23] bg-[#e9ddff] px-3 py-2 text-[#120a23] outline-none"
-              />
-            </label>
             <label className="block">
               Birth Date
               <input
