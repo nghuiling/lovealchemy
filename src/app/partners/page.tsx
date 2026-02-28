@@ -167,8 +167,8 @@ export default function PartnersPage() {
           <section className="pixel-card rounded-sm p-6">
             <h1 className="text-2xl">No avatar session found</h1>
             <p className="mt-3 text-xl text-[#c8b7f8]">Complete setup, quiz, avatar and preview first.</p>
-            <Link href="/" className="pixel-button mt-5 inline-block bg-[#ffcb47] px-4 py-3 text-base text-[#120a23]">
-              Back to Step 1
+            <Link href="/setup" className="pixel-button mt-5 inline-block bg-[#ffcb47] px-4 py-3 text-base text-[#120a23]">
+              Back to Setup
             </Link>
           </section>
         </div>

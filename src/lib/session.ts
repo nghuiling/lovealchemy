@@ -36,3 +36,8 @@ export function writeSession(next: QuestSession) {
   if (typeof window === "undefined") return;
   localStorage.setItem(SESSION_KEY, JSON.stringify(next));
 }
+
+export function clearSession() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(SESSION_KEY);
+}

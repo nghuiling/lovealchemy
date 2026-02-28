@@ -15,8 +15,8 @@ const pixelBody = VT323({
 });
 
 export const metadata: Metadata = {
-  title: "Quest Dating",
-  description: "A pixel game style dating app powered by personality quiz.",
+  title: "Love Alchemy",
+  description: "A pixel game style dating app powered by personality quiz, avatar chat, and quest simulations.",
 };
 
 export default function RootLayout({
