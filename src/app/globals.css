@@ -1,26 +1,58 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #1c1034;
+  --foreground: #f9f5ff;
+  --panel: #2a1a4b;
+  --panel-border: #8e6dd1;
+  --accent: #ffcb47;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-sans: var(--font-pixel-body);
+  --font-mono: var(--font-pixel-title);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-pixel-body), monospace;
+  image-rendering: pixelated;
+}
+
+.pixel-card {
+  background: var(--panel);
+  border: 4px solid var(--panel-border);
+  box-shadow:
+    0 0 0 2px #120a23 inset,
+    0 0 0 2px #120a23;
+}
+
+.pixel-button {
+  border: 3px solid #120a23;
+  box-shadow: 0 4px 0 #120a23;
+}
+
+.pixel-button:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #120a23;
+}
+
+.pixel-grid-bg {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.blink {
+  animation: blink 1.1s steps(2, start) infinite;
+}
+
+@keyframes blink {
+  to {
+    visibility: hidden;
+  }
 }
