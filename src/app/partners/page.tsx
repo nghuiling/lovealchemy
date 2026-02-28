@@ -6,7 +6,7 @@ import { PixelAvatar } from "@/components/pixel-avatar";
 import { buildLoveProfile } from "@/lib/love-quiz";
 import { QUEST_DEFINITIONS } from "@/lib/quests";
 import { QuestSession, readSession, writeSession } from "@/lib/session";
-import { AgentProfile } from "@/types/profile";
+import { AgentProfile, MatchCandidate } from "@/types/profile";
 
 type AgentTurn = {
   speaker: string;
@@ -17,7 +17,7 @@ type AgentTurn = {
 type AgentInteraction = {
   partner: AgentProfile;
   rounds: AgentTurn[];
-  endedBy: "low-score" | "max-turns";
+  endedBy: "in-progress" | "low-score" | "max-turns";
   finalUserScore: number;
   finalPartnerScore: number;
   averageScore: number;
@@ -32,6 +32,22 @@ type AgentSimulationResponse = {
   partners: AgentProfile[];
   interactions: AgentInteraction[];
 };
+
+type StreamEvent =
+  | { type: "init"; userAgent: AgentProfile; partners: AgentProfile[] }
+  | {
+      type: "interaction_update";
+      partner: AgentProfile;
+      partnerId: string;
+      rounds: AgentTurn[];
+      finalUserScore: number;
+      finalPartnerScore: number;
+      averageScore: number;
+      endedBy: "in-progress" | "low-score" | "max-turns";
+    }
+  | { type: "interaction_done"; interaction: AgentInteraction }
+  | { type: "done"; userAgent: AgentProfile; partners: AgentProfile[]; interactions: AgentInteraction[] }
+  | { type: "error"; message: string };
 
 function inferVibeFromPartner(partner: AgentProfile) {
   const text = `${partner.personalitySummary} ${partner.preferenceSummary}`.toLowerCase();
@@ -50,13 +66,41 @@ function topQuestForPartner(partner: AgentProfile) {
   return scored[0].quest;
 }
 
+function toCandidate(interaction: AgentInteraction): MatchCandidate {
+  return {
+    id: interaction.partner.id,
+    name: interaction.partner.name,
+    vibe: inferVibeFromPartner(interaction.partner),
+    compatibility: interaction.averageScore,
+    avatar: interaction.partner.avatar,
+  };
+}
+
+function placeholderInteraction(partner: AgentProfile): AgentInteraction {
+  return {
+    partner,
+    rounds: [],
+    endedBy: "in-progress",
+    finalUserScore: 7,
+    finalPartnerScore: 7,
+    averageScore: 0,
+  };
+}
+
+function upsertInteraction(list: AgentInteraction[], next: AgentInteraction) {
+  const index = list.findIndex((item) => item.partner.id === next.partner.id);
+  if (index === -1) return [...list, next];
+  const updated = [...list];
+  updated[index] = next;
+  return updated;
+}
+
 export default function PartnersPage() {
   const [session] = useState<QuestSession | null>(() => readSession());
   const [ranSimulation, setRanSimulation] = useState(false);
   const [isLive, setIsLive] = useState(false);
   const [clockMs, setClockMs] = useState(0);
-  const [hubCandidateId, setHubCandidateId] = useState<string | null>(null);
-  const [wyrCount, setWyrCount] = useState<3 | 5 | 7>(5);
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
 
   const [initializedPartners, setInitializedPartners] = useState<AgentProfile[]>([]);
   const [simulations, setSimulations] = useState<AgentInteraction[]>([]);
@@ -92,8 +136,24 @@ export default function PartnersPage() {
   }, [isLive, clockMs]);
 
   const sortedSimulations = useMemo(() => {
-    return [...simulations].sort((a, b) => b.averageScore - a.averageScore);
+    return [...simulations].sort((a, b) => b.averageScore - a.averageScore).slice(0, 3);
   }, [simulations]);
+
+  useEffect(() => {
+    if (!sortedSimulations.length) return;
+    setSelectedPartnerId((prev) => prev ?? sortedSimulations[0].partner.id);
+  }, [sortedSimulations]);
+
+  const selectedInteraction = useMemo(() => {
+    if (!selectedPartnerId) return sortedSimulations[0] ?? null;
+    return sortedSimulations.find((item) => item.partner.id === selectedPartnerId) ?? null;
+  }, [selectedPartnerId, sortedSimulations]);
+
+  const isMutualMatch = Boolean(
+    selectedInteraction &&
+      selectedInteraction.finalUserScore >= 7 &&
+      selectedInteraction.finalPartnerScore >= 7,
+  );
 
   const liveScene = useMemo(() => {
     if (!sortedSimulations.length) return null;
@@ -123,7 +183,9 @@ export default function PartnersPage() {
       partnerX = lerp(partnerMeet, partnerStart, t);
     }
 
-    const rounds = active.rounds.length ? active.rounds : [{ speaker: active.partner.name, text: "No conversation generated.", score: 5 }];
+    const rounds = active.rounds.length
+      ? active.rounds
+      : [{ speaker: active.partner.name, text: "No conversation generated.", score: 5 }];
     const roundIndex = Math.min(rounds.length - 1, Math.floor(phase * rounds.length));
 
     return {
@@ -135,20 +197,19 @@ export default function PartnersPage() {
     };
   }, [clockMs, sortedSimulations]);
 
-  const hubCandidate = useMemo(() => {
-    if (!session?.candidates) return null;
-    if (!hubCandidateId) return session.candidates[0] ?? null;
-    return session.candidates.find((c) => c.id === hubCandidateId) ?? null;
-  }, [session, hubCandidateId]);
-
   const runSimulation = async () => {
     if (!session?.playerSetup || !session.personality || !session.avatar || !session.loveAnswers) return;
 
     setSimLoading(true);
     setSimError(null);
     setRanSimulation(true);
+    setIsLive(true);
+    if (initializedPartners.length) {
+      setSimulations(initializedPartners.map(placeholderInteraction));
+    }
+
     try {
-      const response = await fetch("/api/agent-simulate", {
+      const response = await fetch("/api/agent-simulate-stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -160,27 +221,91 @@ export default function PartnersPage() {
         }),
       });
 
-      const payload = (await response.json()) as AgentSimulationResponse | { error: string };
-      if (!response.ok || "error" in payload) {
-        throw new Error("error" in payload ? payload.error : "Simulation failed.");
+      if (!response.ok || !response.body) {
+        let message = "Simulation failed.";
+        try {
+          const payload = (await response.json()) as { message?: string; error?: string };
+          message = payload.error ?? payload.message ?? message;
+        } catch {
+          // Ignore JSON parse failures for error payloads.
+        }
+        throw new Error(message);
       }
 
-      setInitializedPartners(payload.partners ?? initializedPartners);
-      setSimulations(payload.interactions ?? []);
-      setIsLive(true);
-      writeSession({
-        ...session,
-        userAgent: payload.userAgent,
-      });
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let completedPayload: AgentSimulationResponse | null = null;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const rawLine of lines) {
+          const line = rawLine.trim();
+          if (!line) continue;
+
+          const event = JSON.parse(line) as StreamEvent;
+          if (event.type === "error") {
+            throw new Error(event.message || "Simulation failed.");
+          }
+
+          if (event.type === "init") {
+            setInitializedPartners(event.partners ?? []);
+            setSimulations((event.partners ?? []).map(placeholderInteraction));
+            continue;
+          }
+
+          if (event.type === "interaction_update") {
+            setSimulations((prev) => {
+              return upsertInteraction(prev, {
+                partner: event.partner,
+                rounds: event.rounds,
+                endedBy: event.endedBy,
+                finalUserScore: event.finalUserScore,
+                finalPartnerScore: event.finalPartnerScore,
+                averageScore: event.averageScore,
+              });
+            });
+            continue;
+          }
+
+          if (event.type === "interaction_done") {
+            setSimulations((prev) => upsertInteraction(prev, event.interaction));
+            continue;
+          }
+
+          if (event.type === "done") {
+            completedPayload = {
+              userAgent: event.userAgent,
+              partners: event.partners,
+              interactions: event.interactions,
+            };
+            setInitializedPartners(event.partners ?? initializedPartners);
+            setSimulations(event.interactions ?? []);
+          }
+        }
+      }
+
+      if (completedPayload) {
+        const nextCandidates = completedPayload.interactions.map(toCandidate);
+        writeSession({
+          ...session,
+          userAgent: completedPayload.userAgent,
+          candidates: nextCandidates,
+        });
+      }
     } catch (err) {
       setSimError(err instanceof Error ? err.message : "Simulation failed.");
-      setIsLive(false);
     } finally {
       setSimLoading(false);
     }
   };
 
-  if (!session?.avatar || !session?.personality || !session?.candidates || !session?.loveAnswers || !session?.playerSetup) {
+  if (!session?.avatar || !session?.personality || !session?.loveAnswers || !session?.playerSetup) {
     return (
       <main className="pixel-grid-bg min-h-screen bg-background px-4 py-8 text-foreground sm:px-8">
         <div className="mx-auto max-w-3xl">
@@ -227,12 +352,14 @@ export default function PartnersPage() {
           )}
 
           <div className="mt-4">
-            <p className="text-xl text-[#c8b7f8]">Initialized partner agents on page load:</p>
+            <p className="text-xl text-[#c8b7f8]">Potential matches:</p>
             <div className="mt-2 grid gap-2 md:grid-cols-3">
               {initializedPartners.map((partner) => (
                 <div key={partner.id} className="rounded-sm border-2 border-[#120a23] bg-[#241544] p-2 text-lg">
                   <p className="text-[#ffdf84]">{partner.name}</p>
-                  <p>{partner.age} yrs | {partner.occupation}</p>
+                  <p>
+                    {partner.age} yrs | {partner.occupation}
+                  </p>
                 </div>
               ))}
             </div>
@@ -272,7 +399,7 @@ export default function PartnersPage() {
                   {liveScene && (
                     <>
                       <div className="absolute left-3 top-3 rounded-sm border border-[#5f4b92] bg-[#2e1c55] px-2 py-1 text-sm text-[#d9cdf8]">
-                        Active Agent: {liveScene.active.partner.name} | Avg score {liveScene.active.averageScore}%
+                        Active Agent: {liveScene.active.partner.name} | Compatibility {liveScene.active.averageScore}%
                       </div>
 
                       <div
@@ -302,98 +429,82 @@ export default function PartnersPage() {
             </section>
 
             <section className="pixel-card rounded-sm p-5">
-              <h2 className="font-mono text-xs uppercase text-[#ffdf84]">Top Compatibility Results</h2>
+              <h2 className="font-mono text-xs uppercase text-[#ffdf84]">Recommended Partners & Quest Hub</h2>
+              <p className="mt-2 text-xl text-[#c8b7f8]">
+                Select one of the top 3 simulated partners, then choose a quest. Quest launch is enabled only for mutual matches.
+              </p>
+
               <div className="mt-3 grid gap-3 lg:grid-cols-3">
                 {sortedSimulations.map((item) => {
-                  const quest = topQuestForPartner(item.partner);
+                  const selected = selectedInteraction?.partner.id === item.partner.id;
                   return (
                     <div key={item.partner.id} className="pixel-card rounded-sm p-3">
                       <div className="flex gap-3">
                         <PixelAvatar avatar={item.partner.avatar} size={64} />
                         <div>
                           <p className="text-xl text-[#ffdf84]">{item.partner.name}</p>
-                          <p className="text-lg">Avg compatibility: {item.averageScore}%</p>
-                          <p className="text-lg">Ended: {item.endedBy === "low-score" ? "score dropped below 7" : "10-turn cap"}</p>
+                          <p className="text-lg">Compatibility: {item.averageScore}%</p>
+                          <p className="text-lg">
+                            Mutual: {item.finalUserScore >= 7 && item.finalPartnerScore >= 7 ? "Yes" : "No"}
+                          </p>
                         </div>
                       </div>
                       <p className="mt-2 text-lg text-[#d9cdf8]">{item.partner.bio}</p>
-                      <p className="mt-2 text-xl text-[#c8b7f8]">Suggested Quest Theme: {quest.title}</p>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPartnerId(item.partner.id)}
+                        className={`pixel-button mt-3 px-3 py-2 text-sm ${
+                          selected ? "bg-[#ffcb47] text-[#120a23]" : "bg-[#3e276f] text-[#f5ecff]"
+                        }`}
+                      >
+                        {selected ? "Selected" : `Select ${item.partner.name}`}
+                      </button>
                     </div>
                   );
                 })}
               </div>
-            </section>
 
-            <section className="pixel-card rounded-sm p-5">
-              <h2 className="font-mono text-xs uppercase text-[#ffdf84]">Game Hub</h2>
-              <p className="mt-2 text-xl text-[#c8b7f8]">
-                Choose an agent, then launch any game mode directly.
-              </p>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                {session.candidates.map((candidate) => (
-                  <button
-                    key={`hub-${candidate.id}`}
-                    type="button"
-                    onClick={() => setHubCandidateId(candidate.id)}
-                    className={`pixel-button px-3 py-2 text-sm ${
-                      (hubCandidate?.id ?? session.candidates?.[0]?.id) === candidate.id
-                        ? "bg-[#ffcb47] text-[#120a23]"
-                        : "bg-[#3e276f] text-[#f5ecff]"
-                    }`}
-                  >
-                    {candidate.name}
-                  </button>
-                ))}
-              </div>
+              {selectedInteraction && (
+                <div className="mt-4 rounded-sm border-2 border-[#120a23] bg-[#241544] p-3">
+                  <p className="text-xl text-[#ffdf84]">
+                    Selected Partner: {selectedInteraction.partner.name} ({selectedInteraction.averageScore}%)
+                  </p>
+                  <p className="mt-1 text-lg text-[#c8b7f8]">
+                    User score: {selectedInteraction.finalUserScore}/10 | Partner score: {selectedInteraction.finalPartnerScore}/10
+                  </p>
+                  <p className="mt-1 text-lg text-[#c8b7f8]">
+                    Status:{" "}
+                    {isMutualMatch
+                      ? "Mutual match confirmed. Quest buttons are enabled."
+                      : "Not mutual yet (both scores must be at least 7/10)."}
+                  </p>
+                </div>
+              )}
 
               <div className="mt-4 grid gap-3 md:grid-cols-3">
                 {QUEST_DEFINITIONS.map((quest) => (
                   <div key={`hub-quest-${quest.id}`} className="pixel-card rounded-sm p-3">
                     <p className="text-xl text-[#ffdf84]">{quest.title}</p>
                     <p className="mt-1 text-lg text-[#d9cdf8]">{quest.description}</p>
-                    <p className="mt-1 text-sm text-[#c8b7f8]">
-                      Best vibes: {quest.vibes.join(" | ")}
-                    </p>
-                    {hubCandidate && (
+                    <p className="mt-1 text-sm text-[#c8b7f8]">Best vibes: {quest.vibes.join(" | ")}</p>
+                    {selectedInteraction && isMutualMatch ? (
                       <Link
-                        href={`/quest/${hubCandidate.id}?questId=${encodeURIComponent(quest.id)}&name=${encodeURIComponent(quest.title)}`}
+                        href={`/quest/${selectedInteraction.partner.id}?questId=${encodeURIComponent(quest.id)}&name=${encodeURIComponent(quest.title)}`}
                         className="pixel-button mt-3 inline-block bg-[#7de48b] px-3 py-2 text-sm text-[#120a23]"
                       >
-                        Play with {hubCandidate.name}
+                        Start Quest with {selectedInteraction.partner.name}
                       </Link>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        className="pixel-button mt-3 px-3 py-2 text-sm text-[#120a23] bg-[#6d6d6d] disabled:cursor-not-allowed"
+                      >
+                        Mutual Match Required
+                      </button>
                     )}
                   </div>
                 ))}
-              </div>
-
-              <div className="mt-4 pixel-card rounded-sm p-3">
-                <p className="text-xl text-[#ffdf84]">Would You Rather</p>
-                <p className="mt-1 text-lg text-[#d9cdf8]">
-                  Discover preferences through quick choices, then get a summary of selected options.
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {[3, 5, 7].map((count) => (
-                    <button
-                      key={`wyr-${count}`}
-                      type="button"
-                      onClick={() => setWyrCount(count as 3 | 5 | 7)}
-                      className={`pixel-button px-3 py-2 text-sm ${
-                        wyrCount === count ? "bg-[#ffcb47] text-[#120a23]" : "bg-[#3e276f] text-[#f5ecff]"
-                      }`}
-                    >
-                      {count} questions
-                    </button>
-                  ))}
-                </div>
-                {hubCandidate && (
-                  <Link
-                    href={`/games/would-you-rather/${hubCandidate.id}?count=${wyrCount}`}
-                    className="pixel-button mt-3 inline-block bg-[#7de48b] px-3 py-2 text-sm text-[#120a23]"
-                  >
-                    Play Would You Rather with {hubCandidate.name}
-                  </Link>
-                )}
               </div>
             </section>
 
@@ -405,11 +516,21 @@ export default function PartnersPage() {
                     <p className="text-xl text-[#ffdf84]">
                       {item.partner.name} | User score: {item.finalUserScore}/10 | Partner score: {item.finalPartnerScore}/10
                     </p>
-                    <p className="mt-1 text-lg text-[#c8b7f8]">End condition: {item.endedBy === "low-score" ? "A score dropped below 7" : "Reached 10 responses"}</p>
+                    <p className="mt-1 text-lg text-[#c8b7f8]">
+                      End condition:{" "}
+                      {item.endedBy === "in-progress"
+                        ? "Simulation running..."
+                        : item.endedBy === "low-score"
+                          ? "A score dropped below 7"
+                          : "Reached 10 responses"}
+                    </p>
                     <div className="mt-2 space-y-2">
                       {item.rounds.map((r, idx) => (
                         <p key={`${item.partner.id}-${idx}`} className="text-lg text-[#d7eeff]">
-                          <span className="text-[#7de48b]">{r.speaker} (score {r.score}/10):</span> {r.text}
+                          <span className="text-[#7de48b]">
+                            {r.speaker} (score {r.score}/10):
+                          </span>{" "}
+                          {r.text}
                         </p>
                       ))}
                     </div>

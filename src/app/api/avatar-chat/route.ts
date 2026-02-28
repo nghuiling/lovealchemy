@@ -1,92 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
-import { buildLoveProfile, LoveAnswers } from "@/lib/love-quiz";
+import { LoveAnswers } from "@/lib/love-quiz";
 import { PersonalityProfile } from "@/types/profile";
 
 type AvatarChatRequest = {
   message?: string;
   personality?: PersonalityProfile;
   loveAnswers?: LoveAnswers;
+  quizConversation?: Array<{
+    question: string;
+    answer: string;
+  }>;
   history?: Array<{
     role: "user" | "avatar";
     text: string;
   }>;
 };
 
-const STYLE_VOICES: Record<string, string[]> = {
-  "calm-romantic": [
-    "I like slow, meaningful bonding and thoughtful moments.",
-    "I choose emotional safety and authenticity first.",
-  ],
-  playful: [
-    "I keep romance fun and energetic with surprise moments.",
-    "I feel attraction through laughter and spontaneity.",
-  ],
-  secure: [
-    "I value consistency and actions that match words.",
-    "I trust slow and steady effort over grand speeches.",
-  ],
-  adventurous: [
-    "I connect best through shared adventures and new experiences.",
-    "I like momentum and mutual curiosity in relationships.",
-  ],
-};
-
-function pickBySeed(items: string[], seed: number) {
-  return items[Math.abs(seed) % items.length];
-}
-
-function keywordAdvice(message: string, personality: PersonalityProfile, tags: string[]) {
-  const m = message.toLowerCase();
-  if (/date|first date|plan/.test(m)) {
-    if (/bold|expressive/.test(personality.coreVibe)) return "go for something active and a little playful so chemistry can show up naturally.";
-    if (/deep|intuitive/.test(personality.coreVibe)) return "pick a calm place where both of you can actually talk and feel heard.";
-    if (/steady|grounded/.test(personality.coreVibe)) return "keep it cozy and low-pressure so trust builds naturally.";
-    return "something simple with room to talk usually works best.";
+function fallbackReply(message: string, personality: PersonalityProfile) {
+  const vibe = personality.coreVibe.toLowerCase();
+  const direct = personality.communicationStyle.toLowerCase().includes("direct");
+  if (/date|first date|plan/.test(message.toLowerCase())) {
+    return direct
+      ? `go for a clear, low-pressure plan. your ${vibe} vibe works best when both sides feel comfortable and honest.`
+      : `pick a calm date with room to talk. your ${vibe} vibe connects better through emotional ease.`;
   }
-  if (/red flag|toxic|avoid/.test(m)) {
-    if (tags.includes("secure")) return "watch for people who are inconsistent with effort. you need reliability.";
-    if (tags.includes("free-spirit")) return "watch out for controlling behavior. you need room to breathe.";
-    return "watch for mixed signals, poor listening, and repeated broken promises.";
+  if (/red flag|toxic|avoid/.test(message.toLowerCase())) {
+    return "watch for inconsistency between words and actions. your best match should feel emotionally steady, not confusing.";
   }
-  if (/love|relationship|match/.test(m)) {
-    return "your best match is someone whose pace and communication feel easy with you, not forced.";
-  }
-  return "tell me a bit more and i can give you something more specific.";
-}
-
-function conversationalDetail(
-  message: string,
-  personality: PersonalityProfile,
-  tags: string[],
-  history: Array<{ role: "user" | "avatar"; text: string }>,
-) {
-  const lowered = message.toLowerCase();
-  const lastUser = [...history].reverse().find((h) => h.role === "user");
-  if (/first date|date/.test(lowered)) {
-    return personality.relationshipFocus.includes("stability")
-      ? "somewhere comfortable, easy to talk, and low pressure is probably your best move."
-      : "something with movement and fun usually lets your personality land better.";
-  }
-  if (/text|message|reply/.test(lowered)) {
-    return tags.includes("direct")
-      ? "be clear and warm. one sincere message is better than overthinking."
-      : "be honest about what you feel and ask one thoughtful question back.";
-  }
-  if (/red flag|toxic|avoid/.test(lowered)) {
-    return "also trust your gut when someone feels emotionally unavailable, even if the words sound nice.";
-  }
-  if (lastUser && lastUser.text !== message) {
-    return "based on what you said earlier, i’d prioritize someone whose rhythm feels steady with yours.";
-  }
-  return "if you want, give me one real situation and i’ll help you draft what to say.";
-}
-
-function followUpQuestion(message: string) {
-  const m = message.toLowerCase();
-  if (/date|first date|plan/.test(m)) return "do you want more cute, calm, or adventurous vibes?";
-  if (/text|message|reply/.test(m)) return "want me to draft a message in your tone?";
-  if (/red flag|toxic|avoid/.test(m)) return "has anything specific happened that made you feel unsure?";
-  return "what part feels hardest for you right now?";
+  return "that makes sense. tell me one real situation and i will help you respond in a way that fits your vibe.";
 }
 
 export async function POST(req: NextRequest) {
@@ -101,6 +42,7 @@ export async function POST(req: NextRequest) {
   const personality = body.personality;
   const loveAnswers = body.loveAnswers;
   const history = body.history ?? [];
+  const quizConversation = body.quizConversation ?? [];
 
   if (!message || !personality || !loveAnswers) {
     return NextResponse.json(
@@ -109,21 +51,86 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const loveProfile = buildLoveProfile(loveAnswers);
-  const style = loveProfile.tags[0] ?? "secure";
-  const basePool = STYLE_VOICES[style] ?? STYLE_VOICES.secure;
-  const base = pickBySeed(basePool, message.length + style.length);
-  const advice = keywordAdvice(message, personality, loveProfile.tags);
-  const detail = conversationalDetail(message, personality, loveProfile.tags, history);
-  const followUp = followUpQuestion(message);
-  const introOptions = [
-    `hmm, ${message.length < 20 ? "i get what you mean." : "that makes sense."}`,
-    "okay, i hear you.",
-    "honestly, i get where you're coming from.",
-  ];
-  const intro = pickBySeed(introOptions, message.length + history.length).replace(/\s+/g, " ");
+  const apiKey = process.env.OPENAI_API_KEY;
+  const model = process.env.OPENAI_MODEL ?? "gpt-4.1-mini";
+  if (!apiKey) {
+    return NextResponse.json({ reply: fallbackReply(message, personality) });
+  }
 
-  const reply = `${intro} ${base.toLowerCase()} ${advice} ${detail} ${followUp}`;
+  const quizContext =
+    quizConversation.length > 0
+      ? quizConversation
+          .map((item, index) => `Q${index + 1}: ${item.question}\nA${index + 1}: ${item.answer}`)
+          .join("\n\n")
+      : Object.entries(loveAnswers)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([id, answer]) => `${id}: ${answer}`)
+          .join("\n");
 
-  return NextResponse.json({ reply });
+  const historyText = history
+    .slice(-10)
+    .map((item) => `${item.role === "avatar" ? "Avatar" : "User"}: ${item.text}`)
+    .join("\n");
+
+  const prompt = [
+    "You are the user's own avatar chatting in first person.",
+    "Tone: warm, casual, supportive, concise, no emojis.",
+    "Use the player's personality profile to keep voice consistent.",
+    "Reply in 1-3 sentences and include one useful next-step suggestion when relevant.",
+    "",
+    `Personality profile:`,
+    `coreVibe: ${personality.coreVibe}`,
+    `communicationStyle: ${personality.communicationStyle}`,
+    `relationshipFocus: ${personality.relationshipFocus}`,
+    `loveStyle: ${personality.loveStyle}`,
+    `topVibes: ${personality.topVibes.join(", ")}`,
+    `tags: ${personality.tags.join(", ")}`,
+    "",
+    "Step 2 interview context:",
+    quizContext,
+    "",
+    historyText ? `Recent chat history:\n${historyText}` : "No prior history.",
+    `Latest user message: ${message}`,
+  ].join("\n");
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        input: prompt,
+        temperature: 0.8,
+      }),
+    });
+
+    if (!response.ok) {
+      return NextResponse.json({ reply: fallbackReply(message, personality) });
+    }
+
+    const payload = (await response.json()) as {
+      output_text?: string;
+      output?: Array<{
+        content?: Array<{ type?: string; text?: string }>;
+      }>;
+    };
+
+    const reply =
+      payload.output_text?.trim() ||
+      payload.output
+        ?.flatMap((item) => item.content ?? [])
+        .find((part) => part.type === "output_text" && typeof part.text === "string")
+        ?.text?.trim();
+
+    if (!reply) {
+      return NextResponse.json({ reply: fallbackReply(message, personality) });
+    }
+
+    return NextResponse.json({ reply });
+  } catch {
+    return NextResponse.json({ reply: fallbackReply(message, personality) });
+  }
 }

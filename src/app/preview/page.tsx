@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PixelAvatar } from "@/components/pixel-avatar";
-import { buildLoveProfile } from "@/lib/love-quiz";
 import { QuestSession, readSession } from "@/lib/session";
 
 type ChatMessage = {
@@ -25,23 +24,18 @@ export default function PreviewPage() {
     }
   }, [router, session]);
 
-  const loveProfile = useMemo(() => {
-    if (!session?.loveAnswers) return null;
-    return buildLoveProfile(session.loveAnswers);
-  }, [session]);
-
   const avatarName = session?.playerSetup?.name?.trim() || "Avatar";
   const avatarChatName = `${avatarName}'s avatar`;
 
   useEffect(() => {
-    if (!session?.personality || !loveProfile || !session.playerSetup?.name) return;
+    if (!session?.personality || !session.playerSetup?.name) return;
     setMessages([
       {
         role: "avatar",
         text: `hey it's ${session.playerSetup.name}. what's on your mind?`,
       },
     ]);
-  }, [session, loveProfile]);
+  }, [session]);
 
   const sendMessage = async () => {
     if (!input.trim() || !session?.personality || !session?.loveAnswers) return;
@@ -55,12 +49,13 @@ export default function PreviewPage() {
       const response = await fetch("/api/avatar-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: userMessage.text,
-          personality: session.personality,
-          loveAnswers: session.loveAnswers,
-          history: messages.slice(-6),
-        }),
+          body: JSON.stringify({
+            message: userMessage.text,
+            personality: session.personality,
+            loveAnswers: session.loveAnswers,
+            quizConversation: session.quizConversation,
+            history: messages.slice(-6),
+          }),
       });
       const data = (await response.json()) as {
         reply?: string;
@@ -79,7 +74,7 @@ export default function PreviewPage() {
     }
   };
 
-  if (!session?.personality || !session.avatar || !loveProfile || !session.playerSetup) return null;
+  if (!session?.personality || !session.avatar || !session.playerSetup) return null;
 
   return (
     <main className="pixel-grid-bg min-h-screen bg-background px-4 py-6 text-foreground sm:px-8">
@@ -101,10 +96,10 @@ export default function PreviewPage() {
               <PixelAvatar avatar={session.avatar} size={220} />
               <p className="text-2xl text-[#ffdf84]">{avatarName}</p>
               <p className="text-xl text-[#c8b7f8]">
-                Top match vibes: {loveProfile.topVibes.join(" + ")}
+                Top match vibes: {session.personality.topVibes.join(" + ")}
               </p>
               <p className="text-xl text-[#c8b7f8]">
-                Love style: {loveProfile.tags.join(" | ")}
+                Love style: {session.personality.loveStyle}
               </p>
             </div>
 

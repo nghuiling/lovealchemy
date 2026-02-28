@@ -247,6 +247,7 @@ export default function QuizPage() {
         body: JSON.stringify({
           playerSetup: session.playerSetup,
           loveAnswers: answers,
+          quizConversation: conversation,
         }),
       });
       const payload = (await response.json()) as AvatarProfileResponse | { error: string };

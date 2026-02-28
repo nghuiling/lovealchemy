@@ -222,6 +222,14 @@ export async function runAgentInteraction(input: {
   partner: InitializedAgent;
   model: string;
   apiKey: string;
+  onProgress?: (progress: {
+    partnerId: string;
+    rounds: AgentTurn[];
+    finalUserScore: number;
+    finalPartnerScore: number;
+    averageScore: number;
+    endedBy: "in-progress" | "low-score" | "max-turns";
+  }) => void;
 }) {
   const rounds: AgentTurn[] = [];
 
@@ -252,9 +260,17 @@ export async function runAgentInteraction(input: {
 
     if (currentSpeaker === "user") {
       userScore = turn.score;
+      input.onProgress?.({
+        partnerId: input.partner.id,
+        rounds: [...rounds],
+        finalUserScore: userScore,
+        finalPartnerScore: partnerScore,
+        averageScore: Math.round(((userScore + partnerScore) / 2) * 10),
+        endedBy: "in-progress",
+      });
       incomingMessage = turn.response;
       if (userScore < 7) {
-        return {
+        const result = {
           partner: input.partner,
           rounds,
           endedBy: "low-score",
@@ -262,15 +278,32 @@ export async function runAgentInteraction(input: {
           finalPartnerScore: partnerScore,
           averageScore: Math.round(((userScore + partnerScore) / 2) * 10),
         } satisfies AgentInteraction;
+        input.onProgress?.({
+          partnerId: input.partner.id,
+          rounds: [...rounds],
+          finalUserScore: result.finalUserScore,
+          finalPartnerScore: result.finalPartnerScore,
+          averageScore: result.averageScore,
+          endedBy: result.endedBy,
+        });
+        return result;
       }
       currentSpeaker = "partner";
       continue;
     }
 
     partnerScore = turn.score;
+    input.onProgress?.({
+      partnerId: input.partner.id,
+      rounds: [...rounds],
+      finalUserScore: userScore,
+      finalPartnerScore: partnerScore,
+      averageScore: Math.round(((userScore + partnerScore) / 2) * 10),
+      endedBy: "in-progress",
+    });
     incomingMessage = turn.response;
     if (partnerScore < 7) {
-      return {
+      const result = {
         partner: input.partner,
         rounds,
         endedBy: "low-score",
@@ -278,11 +311,20 @@ export async function runAgentInteraction(input: {
         finalPartnerScore: partnerScore,
         averageScore: Math.round(((userScore + partnerScore) / 2) * 10),
       } satisfies AgentInteraction;
+      input.onProgress?.({
+        partnerId: input.partner.id,
+        rounds: [...rounds],
+        finalUserScore: result.finalUserScore,
+        finalPartnerScore: result.finalPartnerScore,
+        averageScore: result.averageScore,
+        endedBy: result.endedBy,
+      });
+      return result;
     }
     currentSpeaker = "user";
   }
 
-  return {
+  const result = {
     partner: input.partner,
     rounds,
     endedBy: "max-turns",
@@ -290,4 +332,13 @@ export async function runAgentInteraction(input: {
     finalPartnerScore: partnerScore,
     averageScore: Math.round(((userScore + partnerScore) / 2) * 10),
   } satisfies AgentInteraction;
+  input.onProgress?.({
+    partnerId: input.partner.id,
+    rounds: [...rounds],
+    finalUserScore: result.finalUserScore,
+    finalPartnerScore: result.finalPartnerScore,
+    averageScore: result.averageScore,
+    endedBy: result.endedBy,
+  });
+  return result;
 }

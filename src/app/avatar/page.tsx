@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { PixelAvatar } from "@/components/pixel-avatar";
-import { buildLoveProfile } from "@/lib/love-quiz";
 import { AvatarConfig } from "@/types/profile";
 import { QuestSession, readSession, writeSession } from "@/lib/session";
 
@@ -56,11 +55,6 @@ export default function AvatarPage() {
   const allowedHairStyles = useMemo(() => {
     if (!session?.playerSetup) return [];
     return session.playerSetup.gender === "female" ? FEMALE_HAIR_STYLES : MALE_HAIR_STYLES;
-  }, [session]);
-
-  const loveProfile = useMemo(() => {
-    if (!session?.loveAnswers) return null;
-    return buildLoveProfile(session.loveAnswers);
   }, [session]);
 
   const updateAvatar = (patch: Partial<AvatarConfig>) => {
@@ -116,10 +110,10 @@ export default function AvatarPage() {
                 <p className="mt-1 text-xl text-[#c8b7f8]">
                   Top Vibes: {session.personality.topVibes.join(" + ")}
                 </p>
-                {loveProfile && (
+                {session.personality && (
                   <div className="mt-3 space-y-1 text-xl text-[#c8b7f8]">
-                    <p>Style Tags: {loveProfile.tags.join(" | ")}</p>
-                    <p>Preferred Match Vibe: {loveProfile.topVibes.join(" + ")}</p>
+                    <p>Style Tags: {session.personality.tags.join(" | ")}</p>
+                    <p>Preferred Match Vibe: {session.personality.topVibes.join(" + ")}</p>
                   </div>
                 )}
               </div>
