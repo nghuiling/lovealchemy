@@ -31,6 +31,7 @@ export default function PreviewPage() {
   }, [session]);
 
   const avatarName = session?.playerSetup?.name?.trim() || "Avatar";
+  const avatarChatName = `${avatarName}'s avatar`;
 
   useEffect(() => {
     if (!session?.personality || !loveProfile || !session.playerSetup?.name) return;
@@ -120,9 +121,9 @@ export default function PreviewPage() {
             <p className="font-mono text-[10px] uppercase tracking-wide text-[#ffdf84]">
               Avatar Chat
             </p>
-            <h2 className="mt-2 text-2xl">Chat with your destiny avatar</h2>
+            <h2 className="mt-2 text-2xl">Chat with your own avatar</h2>
             <p className="mt-1 text-xl text-[#c8b7f8]">
-              Responses mimic your personality + 5-question profile.
+              You are talking to {avatarChatName}. Responses mimic your personality profile.
             </p>
 
             <div className="mt-4 h-72 overflow-y-auto border-2 border-[#120a23] bg-[#241544] p-3">
@@ -137,7 +138,7 @@ export default function PreviewPage() {
                     }`}
                   >
                     <p className="font-mono text-[10px] uppercase">
-                      {msg.role === "avatar" ? avatarName : "You"}
+                      {msg.role === "avatar" ? avatarChatName : "You"}
                     </p>
                     <p>{msg.text}</p>
                   </div>

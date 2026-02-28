@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createPersonality, createSeed, generateAvatar, generateCandidates } from "@/lib/avatar-profile";
+import { initializeUserAgent } from "@/lib/agent-simulation";
 import { LoveAnswers } from "@/lib/love-quiz";
 import { PlayerSetup } from "@/lib/session";
 import { AvatarProfileResponse } from "@/types/profile";
@@ -25,11 +26,17 @@ export async function POST(request: NextRequest) {
   const primaryVibe = personality.topVibes[0] ?? "balanced";
   const avatar = generateAvatar(primaryVibe, seed, playerSetup.gender);
   const candidates = generateCandidates(primaryVibe, seed);
+  const userAgent = initializeUserAgent({
+    setup: playerSetup,
+    personality,
+    avatar,
+  });
 
   const response: AvatarProfileResponse = {
     avatar,
     personality,
     candidates,
+    userAgent,
   };
 
   return NextResponse.json(response);

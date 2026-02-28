@@ -51,6 +51,28 @@ export function allLoveQuestionsAnswered(answers: LoveAnswers) {
   return LOVE_QUESTIONS.every((q) => (answers[q.id] ?? "").trim().length >= 2);
 }
 
+export function answeredQuestionCount(answers: LoveAnswers) {
+  return Object.values(answers).filter((value) => value.trim().length >= 2).length;
+}
+
+export function hasMinimumAnswers(answers: LoveAnswers, minimum: number) {
+  return answeredQuestionCount(answers) >= minimum;
+}
+
+function getOrderedAnswers(answers: LoveAnswers) {
+  return Object.entries(answers)
+    .sort((a, b) => {
+      const left = Number(a[0].replace(/\D+/g, ""));
+      const right = Number(b[0].replace(/\D+/g, ""));
+      if (Number.isNaN(left) || Number.isNaN(right)) {
+        return a[0].localeCompare(b[0]);
+      }
+      return left - right;
+    })
+    .map(([, value]) => value.trim())
+    .filter((value) => value.length >= 2);
+}
+
 function hasAny(text: string, words: string[]) {
   return words.some((w) => text.includes(w));
 }
@@ -105,11 +127,13 @@ function parseVibes(vibeAnswer: string, paceAnswer: string) {
 }
 
 export function buildLoveProfile(answers: LoveAnswers) {
-  const q1 = (answers.q1 ?? "").trim();
-  const q2 = (answers.q2 ?? "").trim();
-  const q3 = (answers.q3 ?? "").trim();
-  const q4 = (answers.q4 ?? "").trim();
-  const q5 = (answers.q5 ?? "").trim();
+  const ordered = getOrderedAnswers(answers);
+  const fallback = ordered.join(" ");
+  const q1 = ordered[0] ?? fallback;
+  const q2 = ordered[1] ?? fallback;
+  const q3 = ordered[2] ?? fallback;
+  const q4 = ordered[3] ?? fallback;
+  const q5 = ordered[4] ?? fallback;
 
   const communicationStyle = parseCommunication(q1);
   const relationshipFocus = parseFocus(q2);
@@ -135,7 +159,7 @@ export function buildLoveProfile(answers: LoveAnswers) {
         : "balanced-pace",
   ];
 
-  const completeness = [q1, q2, q3, q4, q5].filter((a) => a.length > 5).length;
+  const completeness = ordered.slice(0, 5).filter((a) => a.length > 5).length;
   const compatibilityBonus = 5 + completeness * 2;
 
   return {

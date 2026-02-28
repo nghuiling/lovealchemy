@@ -1,4 +1,4 @@
-import { AvatarConfig, Gender, MatchCandidate, PersonalityProfile } from "@/types/profile";
+import { AgentProfile, AvatarConfig, Gender, MatchCandidate, PersonalityProfile } from "@/types/profile";
 import { LoveAnswers } from "@/lib/love-quiz";
 
 export const SESSION_KEY = "quest-dating-session-v1";
@@ -16,6 +16,11 @@ export type PlayerSetup = {
 export type QuestSession = {
   playerSetup?: PlayerSetup;
   loveAnswers?: LoveAnswers;
+  quizConversation?: Array<{
+    question: string;
+    answer: string;
+  }>;
+  userAgent?: AgentProfile;
   personality?: PersonalityProfile;
   avatar?: AvatarConfig;
   candidates?: MatchCandidate[];

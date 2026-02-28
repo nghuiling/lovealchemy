@@ -30,8 +30,21 @@ export type MatchCandidate = {
   avatar: AvatarConfig;
 };
 
+export type AgentProfile = {
+  id: string;
+  name: string;
+  age: number;
+  bio: string;
+  occupation: string;
+  heightM: number;
+  personalitySummary: string;
+  preferenceSummary: string;
+  avatar: AvatarConfig;
+};
+
 export type AvatarProfileResponse = {
   avatar: AvatarConfig;
   personality: PersonalityProfile;
   candidates: MatchCandidate[];
+  userAgent?: AgentProfile;
 };

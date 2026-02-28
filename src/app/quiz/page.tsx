@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { LOVE_QUESTIONS, allLoveQuestionsAnswered, createInitialLoveAnswers } from "@/lib/love-quiz";
+import { hasMinimumAnswers, LoveAnswers } from "@/lib/love-quiz";
 import { readSession, writeSession } from "@/lib/session";
 import { AvatarProfileResponse } from "@/types/profile";
 
@@ -26,60 +26,67 @@ type ChatMessage = {
   text: string;
 };
 
+type QuizExchange = {
+  question: string;
+  answer: string;
+};
+
+type QuizQuestionResponse = {
+  question?: string;
+};
+
 declare global {
   interface Window {
     webkitSpeechRecognition?: new () => SpeechRecognition;
   }
 }
 
-function buildChatFromAnswers(answers: Record<string, string>) {
+const MIN_QUESTIONS = 3;
+const MAX_QUESTIONS = 10;
+
+function answersFromConversation(conversation: QuizExchange[]) {
+  return conversation.reduce<LoveAnswers>((acc, item, index) => {
+    acc[`q${index + 1}`] = item.answer;
+    return acc;
+  }, {});
+}
+
+function buildMessages(conversation: QuizExchange[], pendingQuestion: string | null) {
   const messages: ChatMessage[] = [];
-  let nextQuestionIndex = LOVE_QUESTIONS.length;
-
-  for (let index = 0; index < LOVE_QUESTIONS.length; index += 1) {
-    const question = LOVE_QUESTIONS[index];
-    messages.push({ role: "bot", text: question.question });
-
-    const answer = (answers[question.id] ?? "").trim();
-    if (answer.length >= 2) {
-      messages.push({ role: "user", text: answer });
-      continue;
-    }
-
-    nextQuestionIndex = index;
-    break;
+  for (const pair of conversation) {
+    messages.push({ role: "bot", text: pair.question });
+    messages.push({ role: "user", text: pair.answer });
   }
-
-  return { messages, nextQuestionIndex };
+  if (pendingQuestion) {
+    messages.push({ role: "bot", text: pendingQuestion });
+  }
+  return messages;
 }
 
 export default function QuizPage() {
   const router = useRouter();
-  const [answers, setAnswers] = useState(createInitialLoveAnswers);
-  const [error, setError] = useState<string | null>(null);
+  const [conversation, setConversation] = useState<QuizExchange[]>([]);
+  const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
+  const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [input, setInput] = useState("");
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([{ role: "bot", text: LOVE_QUESTIONS[0].question }]);
+  const [isGettingQuestion, setIsGettingQuestion] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    const session = readSession();
-    if (!session?.playerSetup) {
-      router.replace("/setup");
-      return;
-    }
+  const answers = useMemo(() => answersFromConversation(conversation), [conversation]);
+  const answeredCount = conversation.length;
+  const progress = Math.round((Math.min(answeredCount, MAX_QUESTIONS) / MAX_QUESTIONS) * 100);
+  const reachedMinimum = answeredCount >= MIN_QUESTIONS;
+  const reachedMaximum = answeredCount >= MAX_QUESTIONS;
 
-    if (session.loveAnswers) {
-      const restored = session.loveAnswers;
-      const rebuiltChat = buildChatFromAnswers(restored);
-      setAnswers(restored);
-      setChatMessages(rebuiltChat.messages.length ? rebuiltChat.messages : [{ role: "bot", text: LOVE_QUESTIONS[0].question }]);
-      setCurrentQuestionIndex(rebuiltChat.nextQuestionIndex);
-    }
-  }, [router]);
+  const chatMessages = useMemo(
+    () => buildMessages(conversation, reachedMaximum || isGettingQuestion ? null : currentQuestion),
+    [conversation, currentQuestion, reachedMaximum, isGettingQuestion],
+  );
+
+  const supportsSpeech = typeof window !== "undefined" && Boolean(window.webkitSpeechRecognition);
 
   useEffect(() => {
     const container = chatScrollRef.current;
@@ -88,16 +95,46 @@ export default function QuizPage() {
       top: container.scrollHeight,
       behavior: "smooth",
     });
-  }, [chatMessages, input]);
+  }, [chatMessages, input, isGettingQuestion]);
 
-  const supportsSpeech = typeof window !== "undefined" && Boolean(window.webkitSpeechRecognition);
-  const answeredCount = useMemo(
-    () => LOVE_QUESTIONS.filter((q) => (answers[q.id] ?? "").trim().length >= 2).length,
-    [answers],
-  );
-  const progress = Math.round((answeredCount / LOVE_QUESTIONS.length) * 100);
-  const isComplete = currentQuestionIndex >= LOVE_QUESTIONS.length;
-  const activeQuestion = isComplete ? null : LOVE_QUESTIONS[currentQuestionIndex];
+  useEffect(() => {
+    const session = readSession();
+    if (!session?.playerSetup) {
+      router.replace("/setup");
+      return;
+    }
+
+    const restoredConversation = session.quizConversation ?? [];
+    setConversation(restoredConversation);
+
+    if (restoredConversation.length >= MAX_QUESTIONS) {
+      setCurrentQuestion(null);
+      return;
+    }
+
+    const askNext = async () => {
+      setIsGettingQuestion(true);
+      try {
+        const response = await fetch("/api/quiz-question", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            playerSetup: session.playerSetup,
+            exchanges: restoredConversation,
+          }),
+        });
+        const payload = (await response.json()) as QuizQuestionResponse;
+        const question = payload.question?.trim();
+        setCurrentQuestion(question && question.length > 3 ? question : "What matters most to you in a relationship?");
+      } catch {
+        setCurrentQuestion("What matters most to you in a relationship?");
+      } finally {
+        setIsGettingQuestion(false);
+      }
+    };
+
+    void askNext();
+  }, [router]);
 
   const startListening = () => {
     if (!supportsSpeech || isListening) return;
@@ -132,9 +169,49 @@ export default function QuizPage() {
     setIsListening(false);
   };
 
-  const sendAnswer = () => {
-    if (isComplete || !activeQuestion) return;
+  const askNextQuestion = async (nextConversation: QuizExchange[]) => {
+    if (nextConversation.length >= MAX_QUESTIONS) {
+      setCurrentQuestion(null);
+      return;
+    }
 
+    const session = readSession();
+    if (!session?.playerSetup) {
+      router.replace("/setup");
+      return;
+    }
+
+    setIsGettingQuestion(true);
+    try {
+      const response = await fetch("/api/quiz-question", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          playerSetup: session.playerSetup,
+          exchanges: nextConversation,
+        }),
+      });
+      const payload = (await response.json()) as QuizQuestionResponse;
+      const question = payload.question?.trim();
+      setCurrentQuestion(question && question.length > 3 ? question : "What is one trait you value most in a partner?");
+    } catch {
+      setCurrentQuestion("What is one trait you value most in a partner?");
+    } finally {
+      setIsGettingQuestion(false);
+    }
+  };
+
+  const persistConversation = (nextConversation: QuizExchange[]) => {
+    const session = readSession() ?? {};
+    writeSession({
+      ...session,
+      loveAnswers: answersFromConversation(nextConversation),
+      quizConversation: nextConversation,
+    });
+  };
+
+  const sendAnswer = async () => {
+    if (!currentQuestion || reachedMaximum || isGettingQuestion) return;
     const trimmed = input.trim();
     if (trimmed.length < 2) {
       setError("Please enter a fuller answer before sending.");
@@ -142,29 +219,12 @@ export default function QuizPage() {
     }
 
     setError(null);
-
-    const nextAnswers = {
-      ...answers,
-      [activeQuestion.id]: trimmed,
-    };
-
-    const nextMessages: ChatMessage[] = [...chatMessages, { role: "user", text: trimmed }];
-    const nextQuestionIndex = currentQuestionIndex + 1;
-
-    if (nextQuestionIndex < LOVE_QUESTIONS.length) {
-      nextMessages.push({ role: "bot", text: LOVE_QUESTIONS[nextQuestionIndex].question });
-    }
-
-    setAnswers(nextAnswers);
-    setChatMessages(nextMessages);
-    setCurrentQuestionIndex(nextQuestionIndex);
+    const nextConversation = [...conversation, { question: currentQuestion, answer: trimmed }];
+    setConversation(nextConversation);
     setInput("");
-
-    const existing = readSession() ?? {};
-    writeSession({
-      ...existing,
-      loveAnswers: nextAnswers,
-    });
+    setCurrentQuestion(null);
+    persistConversation(nextConversation);
+    await askNextQuestion(nextConversation);
   };
 
   const generateAvatar = async () => {
@@ -173,8 +233,8 @@ export default function QuizPage() {
       router.replace("/setup");
       return;
     }
-    if (!allLoveQuestionsAnswered(answers)) {
-      setError("Please answer all 5 questions first.");
+    if (!hasMinimumAnswers(answers, MIN_QUESTIONS)) {
+      setError(`Please answer at least ${MIN_QUESTIONS} questions first.`);
       return;
     }
 
@@ -196,9 +256,11 @@ export default function QuizPage() {
       writeSession({
         ...session,
         loveAnswers: answers,
+        quizConversation: conversation,
         personality: payload.personality,
         avatar: payload.avatar,
         candidates: payload.candidates,
+        userAgent: payload.userAgent,
       });
       router.push("/avatar");
     } catch (err) {
@@ -213,16 +275,17 @@ export default function QuizPage() {
       <div className="mx-auto max-w-5xl space-y-6">
         <header className="pixel-card rounded-sm p-5">
           <p className="font-mono text-[10px] uppercase tracking-wide text-[#ffdf84]">Step 2 of 5</p>
-          <h1 className="mt-3 text-xl sm:text-3xl">Love Profile Chat</h1>
+          <h1 className="mt-3 text-xl sm:text-3xl">Personality Interview Chat</h1>
           <p className="mt-3 text-2xl text-[#c8b7f8]">
-            Chat through 5 key questions to shape your avatar personality. <span className="blink">_</span>
+            AI keeps learning your vibe through questions. Minimum 3 answers, maximum 10 answers.{" "}
+            <span className="blink">_</span>
           </p>
           <div className="mt-4">
             <div className="h-4 w-full border-2 border-[#120a23] bg-[#2f1a55]">
               <div className="h-full bg-[#ffcb47]" style={{ width: `${progress}%` }} />
             </div>
             <p className="mt-1 text-lg text-[#c8b7f8]">
-              Progress: {answeredCount}/{LOVE_QUESTIONS.length}
+              Progress: {answeredCount}/{MAX_QUESTIONS}
             </p>
           </div>
         </header>
@@ -248,24 +311,17 @@ export default function QuizPage() {
                   <p className="mt-1">{message.text}</p>
                 </div>
               ))}
+              {isGettingQuestion && !reachedMaximum && (
+                <div className="max-w-[90%] rounded-sm border-2 border-[#ffcb47] bg-[#3a275f] p-3 text-xl text-[#ffe9a8]">
+                  <p className="font-mono text-[10px] uppercase tracking-wide text-[#c8b7f8]">Love Bot</p>
+                  <p className="mt-1">Thinking of the next question...</p>
+                </div>
+              )}
             </div>
           </div>
 
-          {!isComplete && activeQuestion && (
+          {!reachedMaximum && (
             <div className="mt-4 space-y-3">
-              <div className="flex flex-wrap gap-2">
-                {activeQuestion.suggestions.map((hint) => (
-                  <button
-                    key={hint}
-                    type="button"
-                    onClick={() => setInput((prev) => `${prev} ${hint}`.trim())}
-                    className="pixel-button bg-[#3e276f] px-3 py-1 text-sm text-[#f5ecff]"
-                  >
-                    + {hint}
-                  </button>
-                ))}
-              </div>
-
               <div className="flex flex-wrap gap-3">
                 <input
                   value={input}
@@ -273,7 +329,7 @@ export default function QuizPage() {
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       event.preventDefault();
-                      sendAnswer();
+                      void sendAnswer();
                     }
                   }}
                   placeholder="Type your message..."
@@ -282,15 +338,16 @@ export default function QuizPage() {
                 <button
                   type="button"
                   onClick={isListening ? stopListening : startListening}
-                  disabled={!supportsSpeech}
+                  disabled={!supportsSpeech || isGettingQuestion}
                   className="pixel-button bg-[#7de48b] px-4 py-3 text-base text-[#120a23] disabled:cursor-not-allowed disabled:bg-[#64866a]"
                 >
                   {isListening ? "Stop Voice" : "Use Voice"}
                 </button>
                 <button
                   type="button"
-                  onClick={sendAnswer}
-                  className="pixel-button bg-[#ffcb47] px-4 py-3 text-base text-[#120a23]"
+                  onClick={() => void sendAnswer()}
+                  disabled={isGettingQuestion}
+                  className="pixel-button bg-[#ffcb47] px-4 py-3 text-base text-[#120a23] disabled:cursor-not-allowed disabled:bg-[#d3b77c]"
                 >
                   Send
                 </button>
@@ -298,19 +355,26 @@ export default function QuizPage() {
             </div>
           )}
 
-          {isComplete && (
-            <div className="mt-4">
-              <p className="text-xl text-[#c8b7f8]">All 5 answers captured. Generate your avatar profile when ready.</p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            {reachedMinimum && (
               <button
                 type="button"
                 onClick={() => void generateAvatar()}
                 disabled={loading}
-                className="pixel-button mt-3 bg-[#ffcb47] px-4 py-3 text-base text-[#120a23] disabled:cursor-not-allowed disabled:bg-[#d3b77c]"
+                className="pixel-button bg-[#ffcb47] px-4 py-3 text-base text-[#120a23] disabled:cursor-not-allowed disabled:bg-[#d3b77c]"
               >
-                {loading ? "Generating Avatar..." : "Generate Avatar"}
+                {loading ? "Generating Avatar..." : "Move to Next Step"}
               </button>
-            </div>
-          )}
+            )}
+            {reachedMaximum && (
+              <p className="text-xl text-[#c8b7f8]">Maximum reached (10/10). Continue to the next step.</p>
+            )}
+            {!reachedMinimum && (
+              <p className="text-xl text-[#c8b7f8]">
+                Answer at least {MIN_QUESTIONS} questions to unlock the next step.
+              </p>
+            )}
+          </div>
 
           {error && <p className="mt-3 text-lg text-[#ff8f8f]">{error}</p>}
         </section>
