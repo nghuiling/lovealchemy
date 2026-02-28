@@ -57,11 +57,13 @@ export function createPersonality(setup: PlayerSetup, answers: LoveAnswers): Per
 
 export function generateAvatar(primaryVibe: string, seed: number, gender: PlayerSetup["gender"]): AvatarConfig {
   const idx = paletteIndexByVibe(primaryVibe);
+  const hairStyle =
+    gender === "female" ? "long" : gender === "nonbinary" ? "medium" : "short";
   return {
     palette: PALETTES[idx],
     motifs: MOTIFS[idx],
     seed,
-    hairStyle: gender === "female" ? "long" : "short",
+    hairStyle,
   };
 }
 
