@@ -9,14 +9,25 @@ export default function HomePage() {
 
   return (
     <main className="pixel-grid-bg min-h-screen bg-background px-4 py-8 text-foreground sm:px-8">
-      <div className="mx-auto grid max-w-5xl gap-6 lg:grid-cols-[1.1fr_1fr] lg:items-center">
-        <section className="pixel-card rounded-sm p-6">
-          <p className="font-mono text-[10px] uppercase tracking-wide text-[#ffdf84]">Love Quest Begins</p>
-          <h1 className="mt-4 text-3xl leading-tight sm:text-5xl">Love Alchemy</h1>
+      <div className="mx-auto flex max-w-4xl items-center justify-center">
+        <section className="pixel-card w-full max-w-2xl rounded-sm p-6 text-center">
+          <div className="mx-auto max-w-md p-3">
+            <Image
+              src="/lovealchemy-logo.svg"
+              alt="Love Alchemy logo"
+              width={1024}
+              height={1024}
+              priority
+              className="h-auto w-full"
+            />
+          </div>
+
           <p className="mt-4 text-2xl text-[#c8b7f8]">
-            Build your pixel avatar, answer the love profile quiz, and run AI-powered partner simulations to discover your
-            best romantic quest match.
+            Build your pixel avatar, answer the love profile quiz, and run
+            AI-powered partner simulations to discover your best romantic quest
+            match.
           </p>
+
           <button
             type="button"
             onClick={() => {
@@ -27,19 +38,6 @@ export default function HomePage() {
           >
             Enter the App
           </button>
-        </section>
-
-        <section className="pixel-card rounded-sm p-6">
-          <div className="mx-auto max-w-md rounded-sm border-2 border-[#120a23] bg-[#120a23] p-3">
-            <Image
-              src="/lovealchemy-logo.png"
-              alt="Love Alchemy logo"
-              width={1024}
-              height={1024}
-              priority
-              className="h-auto w-full"
-            />
-          </div>
         </section>
       </div>
     </main>
